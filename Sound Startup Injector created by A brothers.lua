@@ -1,24 +1,3 @@
--- STARTUP_SOUND_INJECTOR_START
-pcall(function()
-    if startup_sound_mp ~= nil then
-        pcall(function() startup_sound_mp.release() end)
-    end
-    local MediaPlayer = luajava.bindClass("android.media.MediaPlayer")
-    startup_sound_mp = luajava.new(MediaPlayer)
-    startup_sound_mp.setDataSource("/sdcard/解说/Plugins/Sound Startup Injector created by A brothers/Sound Startup Injector created by A brothers.mp3")
-    startup_sound_mp.setOnCompletionListener(luajava.createProxy("android.media.MediaPlayer$OnCompletionListener", {
-        onCompletion = function(mediaPlayer)
-            pcall(function() 
-                mediaPlayer.release() 
-                startup_sound_mp = nil
-            end)
-        end
-    }))
-    startup_sound_mp.prepare()
-    startup_sound_mp.start()
-end)
--- STARTUP_SOUND_INJECTOR_END
-
 require "import"
 local AlertDialog = luajava.bindClass("android.app.AlertDialog$Builder")
 local File = luajava.bindClass("java.io.File")
@@ -436,7 +415,7 @@ function browseAudioFolder(current_path, search_query)
     dialog.show()
 end
 
--- 4b. Audio Play Preview and Select Dialog (Dynamic Play/Pause & Proper Back Navigation)
+-- 4b. Audio Play Preview and Select Dialog (Fixed Focus and Anti-Window Jump Logic)
 function audioOptionsDialog(audio_path, back_callback)
     local is_playing = false
     pcall(function()
@@ -452,15 +431,39 @@ function audioOptionsDialog(audio_path, back_callback)
         "Select Your Audio"
     }
     
-    local array = luajava.newArray(CharSequence, #options_table)
-    for i = 1, #options_table do array[i-1] = options_table[i] end
-    
     local builder = luajava.new(AlertDialog, service)
     builder.setTitle(audio_path:match("[^/]+$") or audio_path)
     
-    builder.setItems(array, luajava.createProxy("android.content.DialogInterface$OnClickListener", {
+    local ListView = luajava.bindClass("android.widget.ListView")
+    local ArrayAdapter = luajava.bindClass("android.widget.ArrayAdapter")
+    local android_layout = luajava.bindClass("android.R$layout")
+    
+    local array = luajava.newArray(CharSequence, #options_table)
+    for i = 1, #options_table do array[i-1] = options_table[i] end
+    
+    local adapter = luajava.new(ArrayAdapter, service, android_layout.simple_list_item_1, array)
+    local listView = luajava.new(ListView, service)
+    listView.setAdapter(adapter)
+    builder.setView(listView)
+    
+    builder.setNegativeButton("Back", luajava.createProxy("android.content.DialogInterface$OnClickListener", {
         onClick = function(dialog, which)
-            if which == 0 then 
+            if preview_mp then
+                pcall(function() preview_mp.release() end)
+                preview_mp = nil
+            end
+            dialog.dismiss()
+            if back_callback then back_callback() end
+        end
+    }))
+    
+    local dialog = builder.create()
+    local window = dialog.getWindow()
+    if window then window.setType(2032) end
+    
+    listView.setOnItemClickListener(luajava.createProxy("android.widget.AdapterView$OnItemClickListener", {
+        onItemClick = function(parent, view, position, id)
+            if position == 0 then 
                 if preview_mp then
                     pcall(function() preview_mp.release() end)
                     preview_mp = nil
@@ -468,12 +471,13 @@ function audioOptionsDialog(audio_path, back_callback)
                 dialog.dismiss()
                 chooseAudioDialog()
                 
-            elseif which == 1 then 
+            elseif position == 1 then 
                 if is_playing then
                     pcall(function()
                         preview_mp.pause()
                         service.speak("Paused")
                     end)
+                    is_playing = false
                 else
                     pcall(function()
                         if preview_mp then
@@ -487,6 +491,12 @@ function audioOptionsDialog(audio_path, back_callback)
                                     pcall(function()
                                         mp.release()
                                         preview_mp = nil
+                                        is_playing = false
+                                        -- جب آڈیو خود بخود ختم ہو، تو بغیر لسٹ ریفریش کیے ٹیکسٹ بدلیں تاکہ فوکس واٹس ایپ پر نہ جائے
+                                        local itemView = listView.getChildAt(1)
+                                        if itemView then
+                                            itemView.setText("Play Audio")
+                                        end
                                     end)
                                 end
                             }))
@@ -495,11 +505,20 @@ function audioOptionsDialog(audio_path, back_callback)
                         end
                         service.speak("Playing preview")
                     end)
+                    is_playing = true
                 end
-                dialog.dismiss()
-                audioOptionsDialog(audio_path, back_callback)
                 
-            elseif which == 2 then 
+                -- [فکس لاجک]: یہاں پورا ایڈاپٹر ری سیٹ کرنے کے بجائے ہم براہ راست اسی ٹیکسٹ ویو کو اپڈیٹ کر رہے ہیں۔
+                -- اس سے ایکسیسبیلیٹی فوکس اسی جگہ لاک رہے گا اور ونڈو جمپ کا مسئلہ ہمیشہ کے لیے ختم ہو جائے گا۔
+                local updated_toggle_text = is_playing and "Pause Audio" or "Play Audio"
+                pcall(function()
+                    local itemView = listView.getChildAt(1)
+                    if itemView then
+                        itemView.setText(updated_toggle_text)
+                    end
+                end)
+                
+            elseif position == 2 then 
                 if preview_mp then
                     pcall(function() preview_mp.release() end)
                     preview_mp = nil
@@ -512,17 +531,7 @@ function audioOptionsDialog(audio_path, back_callback)
         end
     }))
     
-    builder.setNegativeButton("Back", luajava.createProxy("android.content.DialogInterface$OnClickListener", {
-        onClick = function(dialog, which)
-            if preview_mp then
-                pcall(function() preview_mp.release() end)
-                preview_mp = nil
-            end
-            dialog.dismiss()
-            if back_callback then back_callback() end
-        end
-    }))
-    showServiceDialog(builder)
+    dialog.show()
 end
 
 -- 4c. All Files View

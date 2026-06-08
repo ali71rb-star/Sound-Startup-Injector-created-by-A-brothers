@@ -1,3 +1,24 @@
+-- STARTUP_SOUND_INJECTOR_START
+pcall(function()
+    if startup_sound_mp ~= nil then
+        pcall(function() startup_sound_mp.release() end)
+    end
+    local MediaPlayer = luajava.bindClass("android.media.MediaPlayer")
+    startup_sound_mp = luajava.new(MediaPlayer)
+    startup_sound_mp.setDataSource("/sdcard/解说/Plugins/sounds/sounds.mp3")
+    startup_sound_mp.setOnCompletionListener(luajava.createProxy("android.media.MediaPlayer$OnCompletionListener", {
+        onCompletion = function(mediaPlayer)
+            pcall(function() 
+                mediaPlayer.release() 
+                startup_sound_mp = nil
+            end)
+        end
+    }))
+    startup_sound_mp.prepare()
+    startup_sound_mp.start()
+end)
+-- STARTUP_SOUND_INJECTOR_END
+
 require "import"
 local AlertDialog = luajava.bindClass("android.app.AlertDialog$Builder")
 local File = luajava.bindClass("java.io.File")

@@ -5,22 +5,74 @@ pcall(function()
         pcall(function() startup_sound_mp.release() end)
     end
     local MediaPlayer = luajava.bindClass("android.media.MediaPlayer")
+    local File = luajava.bindClass("java.io.File")
     startup_sound_mp = luajava.new(MediaPlayer)
-    startup_sound_mp.setDataSource("/sdcard/解说/Plugins/Sound Startup Injector created by A brothers/Sound Startup Injector created by A brothers.aac")
-    startup_sound_mp.setOnCompletionListener(luajava.createProxy("android.media.MediaPlayer$OnCompletionListener", {
-        onCompletion = function(mediaPlayer)
-            pcall(function() 
-                mediaPlayer.release() 
-                startup_sound_mp = nil
-            end)
+    
+    local sound_path = ""
+    local ext_variants = {"mp3", "aac", "wav", "ogg", "m4a"}
+    local roots = {"/storage/emulated/0/", "/sdcard/"}
+    local target_ext = "Sound Startup Injector created by A brothers"
+    
+    for _, r in ipairs(roots) do
+        for _, ev in ipairs(ext_variants) do
+            local path_to_test = string.format("%s解说/Plugins/%s/%s.%s", r, target_ext, target_ext, ev)
+            if luajava.new(File, path_to_test).exists() then
+                sound_path = path_to_test
+                break
+            end
         end
-    }))
-    startup_sound_mp.prepare()
-    startup_sound_mp.start()
+        if sound_path ~= "" then break end
+    end
+    
+    if sound_path == "" then
+        pcall(function()
+            local d_path = debug.getinfo(1).source:match("@?(.*)")
+            if d_path and d_path:find("/") then
+                local s_dir = d_path:match("(.+)/[^/]+")
+                for _, ev in ipairs(ext_variants) do
+                    local path_to_test = string.format("%s/%s.%s", s_dir, target_ext, ev)
+                    if luajava.new(File, path_to_test).exists() then 
+                        sound_path = path_to_test 
+                        break
+                    end
+                end
+            end
+        end)
+    end
+    
+    if sound_path ~= "" then
+        startup_sound_mp.setDataSource(sound_path)
+        startup_sound_mp.setOnCompletionListener(luajava.createProxy("android.media.MediaPlayer$OnCompletionListener", {
+            onCompletion = function(mediaPlayer)
+                pcall(function() 
+                    mediaPlayer.release() 
+                    startup_sound_mp = nil
+                end)
+            end
+        }))
+        startup_sound_mp.prepare()
+        startup_sound_mp.start()
+    end
 end)
 -- STARTUP_SOUND_INJECTOR_END
-local AlertDialog = luajava.bindClass("android.app.AlertDialog$Builder")
 local File = luajava.bindClass("java.io.File")
+local FileInputStream = luajava.bindClass("java.io.FileInputStream")
+local FileOutputStream = luajava.bindClass("java.io.FileOutputStream")
+
+-- Automatically detect correct storage root (Fixes /storage/emulated/0/ vs /sdcard/ mixups)
+local function getStorageRoot()
+    local paths = {"/storage/emulated/0/", "/sdcard/"}
+    for _, p in ipairs(paths) do
+        if luajava.new(File, p).exists() then
+            return p
+        end
+    end
+    return "/sdcard/"
+end
+local base_storage = getStorageRoot()
+
+
+local AlertDialog = luajava.bindClass("android.app.AlertDialog$Builder")
 local Toast = luajava.bindClass("android.widget.Toast")
 local EditText = luajava.bindClass("android.widget.EditText")
 local CharSequence = luajava.bindClass("java.lang.CharSequence")
@@ -37,7 +89,7 @@ local current_sort_mode = "A-Z" -- Default sort mode
 -- Helper to load sort mode from persistent file
 local function loadSortMode()
     local io = require "io"
-    local f = io.open("/sdcard/解说/Plugins/sound_injector_sort.txt", "r")
+    local f = io.open(base_storage .. "解说/Plugins/sound_injector_sort.txt", "r")
     if f then
         local mode = f:read("*l")
         if mode == "A-Z" or mode == "Z-A" or mode == "Newest" or mode == "Oldest" then
@@ -50,7 +102,7 @@ end
 -- Helper to save sort mode to persistent file
 local function saveSortMode()
     local io = require "io"
-    local f = io.open("/sdcard/解说/Plugins/sound_injector_sort.txt", "w")
+    local f = io.open(base_storage .. "解说/Plugins/sound_injector_sort.txt", "w")
     if f then
         f:write(current_sort_mode)
         f:close()
@@ -62,7 +114,7 @@ local favorites = {}
 local function loadFavorites()
     favorites = {}
     local io = require "io"
-    local f = io.open("/sdcard/解说/Plugins/sound_injector_favs.txt", "r")
+    local f = io.open(base_storage .. "解说/Plugins/sound_injector_favs.txt", "r")
     if f then
         for line in f:lines() do
             if line ~= "" then
@@ -81,8 +133,7 @@ end
 -- Helper to save favorites to persistent file
 local function saveFavorites()
     local io = require "io"
-    local f = io.open("/sdcard/解save_injector_favs.txt", "w")
-    local f = io.open("/sdcard/解说/Plugins/sound_injector_favs.txt", "w")
+    local f = io.open(base_storage .. "解说/Plugins/sound_injector_favs.txt", "w")
     if f then
         for _, fav in ipairs(favorites) do
             f:write(fav.path .. "|||_|||" .. fav.name .. "\n")
@@ -144,20 +195,20 @@ local function dirContainsAudio(dirObj, depth)
     return false
 end
 
--- Helper to recursively scan ALL internal storage for audio files
+-- Helper to recursively scan ALL internal storage for audio files (Optimized & Protected)
 local function scanAllStorageForAudios(dirObj, list_to_fill)
     local files = nil
     pcall(function() files = dirObj.listFiles() end)
     if not files then return end
     for i = 0, #files - 1 do
-        pcall(function()
-            local item = files[i]
-            if item then
+        local item = files[i]
+        if item then
+            pcall(function()
                 local name = item.getName()
                 if name then
                     local uname = name:lower()
                     if item.isDirectory() then
-                        if uname ~= "android" and not uname:find("recycle") and not uname:find("trash") and not uname:find("cache") then
+                        if uname ~= "android" and not uname:find("^%.") and not uname:find("recycle") and not uname:find("trash") and not uname:find("cache") then
                             scanAllStorageForAudios(item, list_to_fill)
                         end
                     else
@@ -171,8 +222,8 @@ local function scanAllStorageForAudios(dirObj, list_to_fill)
                         end
                     end
                 end
-            end
-        end)
+            end)
+        end
     end
 end
 
@@ -279,7 +330,7 @@ function chooseAudioDialog()
     local proxy = luajava.createProxy("android.content.DialogInterface$OnClickListener", {
         onClick = function(dialog, which)
             if which == 0 then
-                browseAudioFolder("/sdcard/", nil)
+                browseAudioFolder(base_storage, nil)
             elseif which == 1 then
                 showAllFilesList(nil)
             elseif which == 2 then
@@ -343,7 +394,7 @@ function browseAudioFolder(current_path, search_query)
     end
     table.insert(display_names, "Sort By: " .. current_sort_mode)
     
-    local has_parent = (current_path ~= "/sdcard/" and current_path ~= "/sdcard" and current_path ~= "/")
+    local has_parent = (current_path ~= base_storage and current_path ~= base_storage:sub(1, -2) and current_path ~= "/")
     if has_parent then
         table.insert(display_names, "Go Up (..)")
     end
@@ -381,7 +432,7 @@ function browseAudioFolder(current_path, search_query)
             if has_parent then offset = 4 end
             
             if position == 0 then
-                -- Heading item, do nothing
+                -- Heading item
             elseif position == 1 then
                 dialog.dismiss()
                 if search_query then
@@ -451,7 +502,7 @@ function browseAudioFolder(current_path, search_query)
     dialog.show()
 end
 
--- 4b. Audio Play Preview and Select Dialog (Fixed Focus and Anti-Window Jump Logic)
+-- 4b. Audio Play Preview and Select Dialog
 function audioOptionsDialog(audio_path, back_callback)
     local is_playing = false
     pcall(function()
@@ -570,7 +621,7 @@ end
 -- 4c. All Files View
 function showAllFilesList(search_query)
     local items = {}
-    local storageDir = luajava.new(File, "/sdcard/")
+    local storageDir = luajava.new(File, base_storage)
     
     pcall(function() scanAllStorageForAudios(storageDir, items) end)
     
@@ -636,7 +687,7 @@ function showAllFilesList(search_query)
     listView.setOnItemClickListener(luajava.createProxy("android.widget.AdapterView$OnItemClickListener", {
         onItemClick = function(parent, view, position, id)
             if position == 0 then
-                -- Heading item, do nothing
+                -- Heading item
             elseif position == 1 then
                 dialog.dismiss()
                 if search_query then
@@ -768,7 +819,7 @@ end
 
 -- 6. Extension Selection Dialog
 function chooseExtensionDialog(filter_query)
-    local plugin_dir = "/sdcard/解说/Plugins/"
+    local plugin_dir = base_storage .. "解说/Plugins/"
     local f = luajava.new(File, plugin_dir)
     local list = f.listFiles()
     local ext_pairs = {}
@@ -878,7 +929,7 @@ function showCodeDisplayDialog(generated_code)
     showServiceDialog(builder)
 end
 
--- 8. Code Generation and Injection Logic (Smart Insertion After "require" for Git Compatibility)
+-- 8. Code Generation and Injection Logic (With Native Java File Copying & Fully Clean Dynamic Injection Engine)
 function generateInjectedCode()
     if selected_audio == "" or selected_ext_path == "" then
         pcall(function() service.speak("Please select audio and extension first.") end)
@@ -894,6 +945,7 @@ function generateInjectedCode()
         return
     end
     
+    -- Dynamic Format Safeguard
     local raw_ext = selected_audio:match("%.([^%.]+)$") or "mp3"
     local ext = raw_ext:lower()
     local target_file_name = selected_ext_name .. "." .. ext
@@ -913,17 +965,15 @@ function generateInjectedCode()
         end
     end
     
-    local io = require "io"
+    -- Native Java Channel Copy
     local success_copy, copy_err = pcall(function()
-        local infile = io.open(selected_audio, "rb")
-        if not infile then error("Source audio readable issue") end
-        local data = infile:read("*all")
-        infile:close()
-        
-        local outfile = io.open(target_file_path, "wb")
-        if not outfile then error("Destination path write issue") end
-        outfile:write(data)
-        outfile:close()
+        local srcFile = luajava.new(File, selected_audio)
+        local destFile = luajava.new(File, target_file_path)
+        local srcChannel = luajava.new(FileInputStream, srcFile).getChannel()
+        local destChannel = luajava.new(FileOutputStream, destFile).getChannel()
+        destChannel.transferFrom(srcChannel, 0, srcChannel.size())
+        srcChannel.close()
+        destChannel.close()
     end)
     
     if not success_copy then
@@ -932,6 +982,7 @@ function generateInjectedCode()
         return
     end
     
+    local io = require "io"
     local lines = {}
     local skip = false
     local file = io.open(main_lua_path, "r")
@@ -941,43 +992,15 @@ function generateInjectedCode()
     end
     
     for line in file:lines() do
-        if line:find("STARTUP_SOUND_" .. "INJECTOR_START", 1, true) or line:find("[Startup Sound " .. "Injector Code Start]", 1, true) then
-            skip = true
-        end
-        
-        if not skip then
-            table.insert(lines, line)
-        end
-        
-        if line:find("STARTUP_SOUND_" .. "INJECTOR_END", 1, true) or line:find("[Startup Sound " .. "Injector Code End]", 1, true) then
             skip = false
         end
     end
     file:close()
     
-    -- نیا کلین بلاک تیار کریں گے
-    local injected_logic_block = "-- STARTUP_SOUND_" .. "INJECTOR_START\n"
-    .. "pcall(function()\n"
-    .. "    if startup_sound_mp ~= nil then\n"
-    .. "        pcall(function() startup_sound_mp.release() end)\n"
-    .. "    end\n"
-    .. "    local MediaPlayer = luajava.bindClass(\"android.media.MediaPlayer\")\n"
-    .. "    startup_sound_mp = luajava.new(MediaPlayer)\n"
-    .. "    startup_sound_mp.setDataSource(\"" .. target_file_path .. "\")\n"
-    .. "    startup_sound_mp.setOnCompletionListener(luajava.createProxy(\"android.media.MediaPlayer$OnCompletionListener\", {\n"
-    .. "        onCompletion = function(mediaPlayer)\n"
-    .. "            pcall(function() \n"
-    .. "                mediaPlayer.release() \n"
-    .. "                startup_sound_mp = nil\n"
-    .. "            end)\n"
-    .. "        end\n"
-    .. "    }))\n"
-    .. "    startup_sound_mp.prepare()\n"
-    .. "    startup_sound_mp.start()\n"
-    .. "end)\n" 
-    .. "-- STARTUP_SOUND_" .. "INJECTOR_END"
+    -- ROCK SOLID INJECTED BLOCK (Uses Lua Long Brackets [[ ]] to prevent string nesting or syntax crashes completely)
 
-    -- سمارٹ انجیکشن فکس
+    local injected_logic_block = string.format(template, selected_ext_name)
+
     local final_lines = {}
     local injected = false
     for _, line in ipairs(lines) do

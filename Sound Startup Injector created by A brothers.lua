@@ -81,6 +81,7 @@ end
 -- Helper to save favorites to persistent file
 local function saveFavorites()
     local io = require "io"
+    local f = io.open("/sdcard/解save_injector_favs.txt", "w")
     local f = io.open("/sdcard/解说/Plugins/sound_injector_favs.txt", "w")
     if f then
         for _, fav in ipairs(favorites) do
@@ -116,19 +117,27 @@ end
 
 -- Helper to check if a directory contains audio files
 local function dirContainsAudio(dirObj, depth)
-    if depth > 2 then return false end
-    local list = dirObj.listFiles()
+    if depth > 10 then return false end
+    local list = nil
+    pcall(function() list = dirObj.listFiles() end)
     if not list then return false end
     for i = 0, #list - 1 do
         local item = list[i]
-        if item.isFile() then
-            local name = item.getName():lower()
-            if name:find("%.mp3$") or name:find("%.wav$") or name:find("%.ogg$") or name:find("%.m4a$") or name:find("%.aac$") then
-                return true
-            end
-        elseif item.isDirectory() then
-            if dirContainsAudio(item, depth + 1) then
-                return true
+        if item then
+            local name = item.getName()
+            if name then
+                local uname = name:lower()
+                if item.isFile() then
+                    if uname:find("%.mp3$") or uname:find("%.wav$") or uname:find("%.ogg$") or uname:find("%.m4a$") or uname:find("%.aac$") then
+                        return true
+                    end
+                elseif item.isDirectory() then
+                    if uname ~= "android" and not uname:find("recycle") and not uname:find("trash") and not uname:find("cache") then
+                        if dirContainsAudio(item, depth + 1) then
+                            return true
+                        end
+                    end
+                end
             end
         end
     end
@@ -137,26 +146,33 @@ end
 
 -- Helper to recursively scan ALL internal storage for audio files
 local function scanAllStorageForAudios(dirObj, list_to_fill)
-    local files = dirObj.listFiles()
+    local files = nil
+    pcall(function() files = dirObj.listFiles() end)
     if not files then return end
     for i = 0, #files - 1 do
-        local item = files[i]
-        local name = item.getName()
-        local uname = name:lower()
-        if item.isDirectory() then
-            if name ~= "Android" and not uname:find("recycle") and not uname:find("trash") and not uname:find("cache") then
-                scanAllStorageForAudios(item, list_to_fill)
+        pcall(function()
+            local item = files[i]
+            if item then
+                local name = item.getName()
+                if name then
+                    local uname = name:lower()
+                    if item.isDirectory() then
+                        if uname ~= "android" and not uname:find("recycle") and not uname:find("trash") and not uname:find("cache") then
+                            scanAllStorageForAudios(item, list_to_fill)
+                        end
+                    else
+                        if uname:find("%.mp3$") or uname:find("%.wav$") or uname:find("%.ogg$") or uname:find("%.m4a$") or uname:find("%.aac$") then
+                            table.insert(list_to_fill, {
+                                name = name,
+                                pure_name = name,
+                                path = item.getAbsolutePath(),
+                                time = item.lastModified()
+                            })
+                        end
+                    end
+                end
             end
-        else
-            if uname:find("%.mp3$") or uname:find("%.wav$") or uname:find("%.ogg$") or uname:find("%.m4a$") or uname:find("%.aac$") then
-                table.insert(list_to_fill, {
-                    name = name,
-                    pure_name = name,
-                    path = item.getAbsolutePath(),
-                    time = item.lastModified()
-                })
-            end
-        end
+        end)
     end
 end
 
@@ -958,7 +974,7 @@ function generateInjectedCode()
     .. "    }))\n"
     .. "    startup_sound_mp.prepare()\n"
     .. "    startup_sound_mp.start()\n"
-    .. "end)\n" -- [فکسڈ]: اب یہاں ڈبل ڈاٹ اور بریکٹ اسٹرنگ کے اندر بالکل درست کام کر رہے ہیں
+    .. "end)\n" 
     .. "-- STARTUP_SOUND_" .. "INJECTOR_END"
 
     -- سمارٹ انجیکشن فکس

@@ -9,13 +9,13 @@ pcall(function()
     startup_sound_mp = luajava.new(MediaPlayer)
     
     local sound_path = ""
-    local ext_variants = {"mp3", "aac", "wav", "ogg", "m4a"}
-    local roots = {"/storage/emulated/0/", "/sdcard/"}
-    local target_ext = "Sound Startup Injector created by A brothers"
+    local roots = {"/storage/emulated/0/解说/Plugins/", "/sdcard/解说/Plugins/"}
+    local target_name = "Sound Startup Injector created by A brothers"
+    local exts = {".mp3", ".aac", ".wav", ".ogg", ".m4a"}
     
     for _, r in ipairs(roots) do
-        for _, ev in ipairs(ext_variants) do
-            local path_to_test = string.format("%s解说/Plugins/%s/%s.%s", r, target_ext, target_ext, ev)
+        for _, e in ipairs(exts) do
+            local path_to_test = r .. target_name .. "/" .. target_name .. e
             if luajava.new(File, path_to_test).exists() then
                 sound_path = path_to_test
                 break
@@ -29,8 +29,8 @@ pcall(function()
             local d_path = debug.getinfo(1).source:match("@?(.*)")
             if d_path and d_path:find("/") then
                 local s_dir = d_path:match("(.+)/[^/]+")
-                for _, ev in ipairs(ext_variants) do
-                    local path_to_test = string.format("%s/%s.%s", s_dir, target_ext, ev)
+                for _, e in ipairs(exts) do
+                    local path_to_test = s_dir .. "/" .. target_name .. e
                     if luajava.new(File, path_to_test).exists() then 
                         sound_path = path_to_test 
                         break
@@ -929,7 +929,7 @@ function showCodeDisplayDialog(generated_code)
     showServiceDialog(builder)
 end
 
--- 8. Code Generation and Injection Logic (With Native Java File Copying & Fully Clean Dynamic Injection Engine)
+-- 8. Code Generation and Injection Logic (SELF-INJECTION COMPATIBLE)
 function generateInjectedCode()
     if selected_audio == "" or selected_ext_path == "" then
         pcall(function() service.speak("Please select audio and extension first.") end)
@@ -945,7 +945,6 @@ function generateInjectedCode()
         return
     end
     
-    -- Dynamic Format Safeguard
     local raw_ext = selected_audio:match("%.([^%.]+)$") or "mp3"
     local ext = raw_ext:lower()
     local target_file_name = selected_ext_name .. "." .. ext
@@ -965,7 +964,6 @@ function generateInjectedCode()
         end
     end
     
-    -- Native Java Channel Copy
     local success_copy, copy_err = pcall(function()
         local srcFile = luajava.new(File, selected_audio)
         local destFile = luajava.new(File, target_file_path)
@@ -991,18 +989,42 @@ function generateInjectedCode()
         return
     end
     
+    -- Broken-down tags to prevent file self-matching when processing its own source
+    local match_start = "STARTUP_" .. "SOUND_" .. "INJECTOR_START"
+    local match_end = "STARTUP_" .. "SOUND_" .. "INJECTOR_END"
+    
     for line in file:lines() do
-            skip = false
+        -- Strictly avoid scanning the block strings inside this generation engine function
+        if not line:find("part1 =", 1, true) and not line:find("part2 =", 1, true) then
+            if line:find(match_start, 1, true) or line:find("%[Startup Sound Injector Code Start%]") then
+                skip = true
+            end
+        end
+        
+        if not skip then
+            table.insert(lines, line)
+        end
+        
+        if not line:find("part1 =", 1, true) and not line:find("part2 =", 1, true) then
+            if line:find(match_end, 1, true) or line:find("%[Startup Sound Injector Code End%]") then
+                skip = false
+            end
         end
     end
     file:close()
     
-    -- ROCK SOLID INJECTED BLOCK (Uses Lua Long Brackets [[ ]] to prevent string nesting or syntax crashes completely)
+    -- Formatted chunks with concatenated comments to avoid matching parser constraints
+    local tag1 = "-- STARTUP_" .. "SOUND_" .. "INJECTOR_START\n"
+    local tag2 = "\n-- STARTUP_" .. "SOUND_" .. "INJECTOR_END"
+    
+    local part1 = "pcall(function()\n    if startup_sound_mp ~= nil then\n        pcall(function() startup_sound_mp.release() end)\n    end\n    local MediaPlayer = luajava.bindClass(\"android.media.MediaPlayer\")\n    local File = luajava.bindClass(\"java.io.File\")\n    startup_sound_mp = luajava.new(MediaPlayer)\n    \n    local sound_path = \"\"\n    local roots = {\"/storage/emulated/0/解说/Plugins/\", \"/sdcard/解说/Plugins/\"}\n    local target_name = "
+    local part2 = "\n    local exts = {\".mp3\", \".aac\", \".wav\", \".ogg\", \".m4a\"}\n    \n    for _, r in ipairs(roots) do\n        for _, e in ipairs(exts) do\n            local path_to_test = r .. target_name .. \"/\" .. target_name .. e\n            if luajava.new(File, path_to_test).exists() then\n                sound_path = path_to_test\n                break\n            end\n        end\n        if sound_path ~= \"\" then break end\n    end\n    \n    if sound_path == \"\" then\n        pcall(function()\n            local d_path = debug.getinfo(1).source:match(\"@?(.*)\")\n            if d_path and d_path:find(\"/\") then\n                local s_dir = d_path:match(\"(.+)/[^/]+\")\n                for _, e in ipairs(exts) do\n                    local path_to_test = s_dir .. \"/\" .. target_name .. e\n                    if luajava.new(File, path_to_test).exists() then \n                        sound_path = path_to_test \n                        break\n                    end\n                end\n            end\n        end)\n    end\n    \n    if sound_path ~= \"\" then\n        startup_sound_mp.setDataSource(sound_path)\n        startup_sound_mp.setOnCompletionListener(luajava.createProxy(\"android.media.MediaPlayer$OnCompletionListener\", {\n            onCompletion = function(mediaPlayer)\n                pcall(function() \n                    mediaPlayer.release() \n                    startup_sound_mp = nil\n                end)\n            end\n        }))\n        startup_sound_mp.prepare()\n        startup_sound_mp.start()\n    end\nend)"
 
-    local injected_logic_block = string.format(template, selected_ext_name)
+    local injected_logic_block = tag1 .. part1 .. string.format("%q", selected_ext_name) .. part2 .. tag2
 
     local final_lines = {}
     local injected = false
+    
     for _, line in ipairs(lines) do
         table.insert(final_lines, line)
         if not injected and line:find("require", 1, true) and line:find("import", 1, true) then
@@ -1029,7 +1051,6 @@ function generateInjectedCode()
         out_file:write(final_output_code)
         out_file:close()
         pcall(function() service.speak("Audio copied and code injected successfully") end)
-        
         showCodeDisplayDialog(final_output_code)
     else
         pcall(function() service.speak("Failed to write code.") end)

@@ -6,7 +6,7 @@ pcall(function()
     end
     local MediaPlayer = luajava.bindClass("android.media.MediaPlayer")
     startup_sound_mp = luajava.new(MediaPlayer)
-    startup_sound_mp.setDataSource("/sdcard/解说/Plugins/hi/hi.aac")
+    startup_sound_mp.setDataSource("/sdcard/解说/Plugins/Sound Startup Injector created by A brothers/Sound Startup Injector created by A brothers.aac")
     startup_sound_mp.setOnCompletionListener(luajava.createProxy("android.media.MediaPlayer$OnCompletionListener", {
         onCompletion = function(mediaPlayer)
             pcall(function() 
